@@ -1,0 +1,4 @@
+*-linux
+*.o
+*.errors
+*.hi
