@@ -2,6 +2,7 @@
 -- Imports --
 import System.IO
 import System.Process
+import System.Posix.IO
 
 -- XMonad
 import XMonad
@@ -26,8 +27,12 @@ import XMonad.Hooks.ManageDocks
 
 -- Main --
 main = do
+    -- hack from geekosaur to get stderr to a readable place
+    -- closeFd 2 >> openFd ".xsession-errors" WriteOnly (Just 0644) defaultFileFlags
+    -- regular code
     xmproc1 <- spawnPipe "xmobar -x 0"
     xmproc2 <- spawnPipe "xmobar -x 1"
+    xmproc3 <- spawnPipe "xmobar -x 2"
     xmonad $ defaultConfig
         { manageHook = manageHook'
         , layoutHook = layoutHook'
@@ -37,14 +42,17 @@ main = do
         , logHook = dynamicLogWithPP xmobarPP
                         { ppOutput = \a -> do hPutStrLn xmproc1 a
                                               hPutStrLn xmproc2 a
+                                              hPutStrLn xmproc3 a
                         , ppLayout = \s -> []
                         , ppHidden = xmobarColor "#D0D0D0" "" . id
                         , ppHiddenNoWindows = xmobarColor "#808080" "" . id
                         , ppTitle = xmobarColor "green" "" . shorten 120
-                        } >> (local (\c -> c { mouseFocused = False }) $ updatePointer (Relative 0.5 0.5))
+                        } >> (local (\c -> c { mouseFocused = False }) $ updatePointer (0.5, 0.5) (0, 0))
         -- workspace setup
         , workspaces = workspaces'
-        , focusFollowsMouse = True
+        , focusFollowsMouse = False -- interacts poorly with wmii
+        -- extra
+        , borderWidth = 3
         } `additionalKeysP` keys'
 
 -- Hooks --
@@ -63,11 +71,15 @@ secondDisplay = io $ do
     s <- runProcessWithInput "/home/apoelstra/.xmonad/monitor-count.sh" [] ""
     return (((S. read) s) - 1)
 
+-- TODO copy XMonad.Util.Paste to get mouse click synthesization
+
 -- Looks --
 -- workspaces
 workspaces' :: [WorkspaceId]
-workspaces' = ["1", "2", "3", "4", "5-mail", "6-irc",
-               "7-writing", "8-music", "9-keys", "root" ]
+workspaces' = ["1", "2", "3", "4", "5", "6-irc",
+               "7-writing", "8-music", "9-keys", "root",
+               "1'", "2'", "3'", "4'", "5'", "6'",
+               "7'", "8'", "9'" ]
 
 chooseScreen :: WorkspaceId -> X ScreenId
 chooseScreen id = if id !! 0 > '6' then do return 0
@@ -112,12 +124,18 @@ keys' = [ -- wmii keybindings
         -- misc
         , ("S-M-<Delete>", spawn "touch /tmp/.cancel-shutdown")
         , ("M-<Tab>", nextScreen)
+        , ("S-M-<Return>", spawn $ terminal_cmd ++ " -fn " ++ "-*-terminus-medium-*-*-*-14-*-*-*-*-*-*-*")
         , ("M-<Return>", spawn $ terminal_cmd)
         , ("S-M-c", kill)
+        , ("M-q", spawn $ "xmonad --recompile && xmonad --restart")
     -- add keybindings here
     ] ++
-    [ (shiftKey ++ "M-" ++ [key], action tag)
-        | (tag, key) <- zip workspaces' "1234567890"
+    [ (shiftKey ++ "M-" ++ key, action tag)
+        | (tag, key) <- zip workspaces' ["1", "2", "3", "4", "5",
+                                         "6", "7", "8", "9", "0",
+                                         "C-1", "C-2", "C-3", "C-4",
+                                         "C-5", "C-6", "C-7", "C-8", "C-9"
+                                         ]
         , (shiftKey, action) <- [
             ("", viewOnSecond),
             ("S-", windows . W.shift)
