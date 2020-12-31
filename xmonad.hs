@@ -1,5 +1,7 @@
 
 -- Imports --
+import qualified Data.Map as M
+import Graphics.X11.ExtraTypes.XF86 -- media keys
 import System.IO
 import System.Process
 import System.Posix.IO
@@ -9,13 +11,14 @@ import XMonad
 import XMonad.Core
 import qualified XMonad.StackSet as W
 import XMonad.Util.Run(spawnPipe, runProcessWithInput)
-import XMonad.Util.EZConfig
+import XMonad.Util.EZConfig(additionalKeys)
 
 -- Layout
-import XMonad.Layout.SimpleDecoration
+import XMonad.Layout.Grid
 import XMonad.Layout.Groups.Wmii
+import qualified XMonad.Layout.IndependentScreens as LIS
 import XMonad.Layout.NoBorders
-import XMonad.Layout.Tabbed
+import XMonad.Layout.SimpleDecoration
 
 -- Actions
 import XMonad.Actions.CycleWS
@@ -23,32 +26,33 @@ import XMonad.Actions.OnScreen
 import XMonad.Actions.UpdatePointer
 
 -- Hooks
-import XMonad.Hooks.DebugStack
 import XMonad.Hooks.DynamicLog
 import XMonad.Hooks.ManageDocks
 import XMonad.Hooks.ManageHelpers
 
 -- Main --
 main = do
+    nScreens <- LIS.countScreens
     -- hack from geekosaur to get stderr to a readable place
     -- closeFd 2 >> openFd ".xsession-errors" WriteOnly (Just 0644) defaultFileFlags
     -- regular code
     xmproc1 <- spawnPipe "xmobar -x 0"
     xmproc2 <- spawnPipe "xmobar -x 1"
     xmproc3 <- spawnPipe "xmobar -x 2"
-    xmonad $ def
-        { manageHook = manageHook'
+    xmonad $ defaultConfig
+        { manageHook = manageDocks
         , layoutHook = layoutHook'
-        , terminal = terminal_cmd
+        , terminal = "urxvt -pe selection-to-clipboard"
+        , keys = keys' nScreens
         , modMask = mod4Mask
         -- xmobar
         , logHook = dynamicLogWithPP xmobarPP
                         { ppOutput = \a -> do hPutStrLn xmproc1 a
                                               hPutStrLn xmproc2 a
                                               hPutStrLn xmproc3 a
-                        , ppLayout = \s -> []
-                        , ppHidden = xmobarColor "#D0D0D0" "" . id
-                        , ppHiddenNoWindows = xmobarColor "#808080" "" . id
+                        , ppLayout = \s -> ""
+                        , ppHidden = xmobarColor "#D0D0D0" ""
+                        , ppHiddenNoWindows = xmobarColor "#808080" ""
                         , ppTitle = xmobarColor "green" "" . shorten 120
                         } >> (local (\c -> c { mouseFocused = False }) $ updatePointer (0.5, 0.5) (0, 0))
         -- workspace setup
@@ -57,80 +61,37 @@ main = do
         , handleEventHook = docksEventHook
         -- extra
         , borderWidth = 5
-        } `additionalKeysP` keys'
+        }
 
 -- Hooks --
-manageHook' :: ManageHook
-manageHook' = manageDocks
-                  <+> (isFullscreen --> doFullFloat)
-                  <+> manageHook def
+layoutHook' = avoidStruts $
+        wmii shrinkText sdTheme
+    ||| noBorders Full
 
-layoutHook' = avoidStruts $ wmii shrinkText sdTheme
-
--- Setup --
-terminal_cmd :: String
-terminal_cmd = "urxvt -pe selection-to-clipboard"
-
-secondDisplay :: X ScreenId
-secondDisplay_ :: X ScreenId
-secondDisplay_ = io $ do
-    s <- runProcessWithInput "/home/apoelstra/.xmonad/monitor-count.sh" [] ""
-    let n = read s
-    let n_adjust = n - 1
-    return (S n_adjust)
-
-thirdDisplay :: X ScreenId
-thirdDisplay_ :: X ScreenId
-thirdDisplay_ = io $ do
-    s <- runProcessWithInput "/home/apoelstra/.xmonad/monitor-count.sh" [] ""
-    let n = read s
-    let n_adjust = if n == 1 then 0
-                   else 1
-    return (S n_adjust)
-
--- overrides for Portland
-secondDisplay = io $ return 1
-thirdDisplay = io $ return 0
-
--- Looks --
--- workspaces
+-- Workspaces (attached to screens, tries to be smart about how many screens there actually are)
 workspaces' :: [WorkspaceId]
-workspaces' = ["1", "2", "3", "4", "5",
-               "Q", "W", "E", "R", "T",
-               "6", "7", "8", "9", "0",
-               "Y", "U", "I", "O", "P",
-               "-1", "-2", "-3", "-4" ]
+workspaces' = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "-1", "-2", "-3", "-4" ]
+workspace_keys' :: [KeySym]
+workspace_keys' = [
+      xK_F1, xK_F2, xK_F3, xK_F4, xK_F5, xK_F6, xK_F7, xK_F8, xK_F9, xK_F10
+    , xK_F11, xK_F12, xK_F13, xK_F14, xK_F15, xK_F16, xK_F17, xK_F18, xK_F19, xK_F20
+    , xK_F21, xK_F22, xK_F23, xK_F24]
 
-chooseScreen :: WorkspaceId -> X ScreenId
-chooseScreen id | id == "1" = secondDisplay
-                | id == "2" = secondDisplay
-                | id == "3" = secondDisplay
-                | id == "4" = secondDisplay
-                | id == "5" = secondDisplay
-                | id == "Q" = secondDisplay
-                | id == "W" = secondDisplay
-                | id == "E" = secondDisplay
-                | id == "R" = secondDisplay
-                | id == "T" = secondDisplay
-                | id == "6" = thirdDisplay
-                | id == "7" = thirdDisplay
-                | id == "8" = thirdDisplay
-                | id == "9" = thirdDisplay
-                | id == "0" = thirdDisplay
-                | id == "Y" = thirdDisplay
-                | id == "U" = thirdDisplay
-                | id == "I" = thirdDisplay
-                | id == "O" = thirdDisplay
-                | id == "P" = thirdDisplay
-                | id == "-1" = return 0
-                | id == "-2" = return 0
-                | id == "-3" = return 0
-                | id == "-4" = return 0
+chooseScreen :: Int -> WorkspaceId -> ScreenId
+chooseScreen 1 _ = 0
+chooseScreen 2 x
+    | elem x ["1", "2", "3", "4", "5", "Q", "W", "E", "R", "T" ] = 1
+    | otherwise = 0
+chooseScreen 3 x
+    | elem x ["1", "2", "3", "4", "5", "Q", "W", "E", "R", "T" ] = 1
+    | elem x ["6", "7", "8", "9", "0", "Y", "U", "I", "O", "P" ] = 2
+    | otherwise = 0
 
-viewOnSecond :: WorkspaceId -> X ()
-viewOnSecond = \tag -> (chooseScreen tag)
-                   >>= (return . viewOnScreen)
-                   >>= (\fn -> windows (fn tag))
+viewFixedScreen :: Int -> WorkspaceId -> WindowSet -> WindowSet
+viewFixedScreen nScreens wid s = viewOnScreen currentScreenId wid s
+--    where currentScreenId = (W.screen . W.current) s
+    where currentScreenId = chooseScreen nScreens wid
+
 
 -- decorations
 sdTheme = def
@@ -143,66 +104,48 @@ sdTheme = def
     , fontName = "xft:xos4 Terminus:style=Regular:size=11"
     }
 
--- Keybindings
--- keys
-keys' = [ -- wmii keybindings
-          -- group modes
-          ("M-m", groupToFullLayout)
-        , ("M-s", groupToTabbedLayout)
-        , ("M-d", groupToVerticalLayout)
-        , ("M-f", toggleGroupFull)
-          -- window resizing
-        , ("M-[", zoomGroupOut)
-        , ("M-]", zoomGroupIn)
-          -- window movement
-        , ("M-<Space>", toggleFocusFloat)
-        , ("M-<Down>", focusDown)
-        , ("M-<Up>", focusUp)
-        , ("S-M-<Down>", swapDown)
-        , ("S-M-<Up>", swapUp)
-        , ("M-<Left>", focusGroupUp)
-        , ("M-<Right>", focusGroupDown)
-        , ("S-M-<Left>", moveToGroupUp False)
-        , ("S-M-<Right>", moveToGroupDown False)
-        -- override numbers since default behaviour (switch to workspace on laptop screen) is surprising
-        , ("M-1", spawn $ "echo")
-        , ("M-2", spawn $ "echo")
-        , ("M-3", spawn $ "echo")
-        , ("M-4", spawn $ "echo")
-        , ("M-5", spawn $ "echo")
-        , ("M-6", spawn $ "echo")
-        , ("M-7", spawn $ "echo")
-        , ("M-8", spawn $ "echo")
-        , ("M-9", spawn $ "echo")
-        , ("M-0", spawn $ "echo")
-        -- fn keys
-        , ("<XF86MonBrightnessUp>", spawn "brightnessctl s +1%")
-        , ("<XF86MonBrightnessDown>", spawn "brightnessctl s 1%-")
-        , ("S-<XF86MonBrightnessUp>", spawn "brightnessctl s +10%")
-        , ("S-<XF86MonBrightnessDown>", spawn "brightnessctl s 10%-")
-        , ("<XF86Favorites>", spawn "/home/apoelstra/bin/seizure.sh")
-        -- misc
-        , ("M-<Tab>", nextScreen)
-        , ("M-`", spawn "idevicediagnostics restart")
-        , ("S-M-<Delete>", spawn "touch /tmp/.cancel-shutdown")
-        , ("S-M-<Return>", spawn $ terminal_cmd ++ " -fn " ++ "-*-terminus-medium-*-*-*-14-*-*-*-*-*-*-*")
-        , ("M-<Return>", spawn $ terminal_cmd)
-        , ("M-<Backspace>", spawn $ terminal_cmd ++ " -e bash -c 'source ~/.bashrc && ssh camus'")
-        , ("S-M-c", kill)
-        , ("M-q", spawn $ "xmonad --recompile && xmonad --restart")
-    -- add keybindings here
-    ] ++
-    [ (shiftKey ++ "M-" ++ key, action tag)
-        | (tag, key) <- zip workspaces' ["<F1>", "<F2>", "<F3>", "<F4>", "<F5>",
-                                         "<F11>", "<F12>", "<F13>", "<F14>", "<F15>",
-                                         "<F6>", "<F7>", "<F8>", "<F9>", "<F10>",
-                                         "<F16>", "<F17>", "<F18>", "<F19>", "<F20>",
-                                         "<F21>", "<F22>", "<F23>", "<F24>"
-                                         ]
-        , (shiftKey, action) <- [
-            ("", viewOnSecond),
-            ("S-", windows . W.shift)
-        ]
+-- Keybindings (takes number of screens so that it can make the F-keys
+--  force certain workspaces to certain monitors
+keys' :: Int -> XConfig Layout -> M.Map (KeyMask, KeySym) (X ())
+keys' nScreens conf = M.fromList $ [
+    -- window switching
+          ((XMonad.modMask conf, xK_Down), focusDown)
+        , ((XMonad.modMask conf, xK_Up), focusUp)
+        , ((shiftMask .|. XMonad.modMask conf, xK_Up), swapUp)
+        , ((shiftMask .|. XMonad.modMask conf, xK_Down), swapDown)
+        , ((XMonad.modMask conf, xK_Left), focusGroupUp)
+        , ((XMonad.modMask conf, xK_Right), focusGroupDown)
+        , ((shiftMask .|. XMonad.modMask conf, xK_Left), moveToGroupUp False)
+        , ((shiftMask .|. XMonad.modMask conf, xK_Right), moveToGroupDown False)
+        , ((XMonad.modMask conf, xK_bracketleft), zoomGroupOut)
+        , ((XMonad.modMask conf, xK_bracketright), zoomGroupIn)
+        , ((XMonad.modMask conf, xK_space), toggleFocusFloat)
+        , ((shiftMask .|. XMonad.modMask conf, xK_space), withFocused $ windows . W.sink)
+    -- screen switching
+        , ((XMonad.modMask conf, xK_Tab), nextScreen)
+        , ((shiftMask .|. XMonad.modMask conf, xK_Tab), shiftNextScreen)
+    -- wmii and layout switching
+        , ((shiftMask .|. XMonad.modMask conf, xK_minus), sendMessage NextLayout)
+        , ((XMonad.modMask conf, xK_s), groupToTabbedLayout)
+        , ((XMonad.modMask conf, xK_d), groupToVerticalLayout)
+    -- mediakeys (nb no modmask)
+        , ((0, xF86XK_MonBrightnessUp), spawn "brightnessctl s +1%")
+        , ((0, xF86XK_MonBrightnessDown), spawn "brightnessctl s 1%-")
+        , ((shiftMask, xF86XK_MonBrightnessUp), spawn "brightnessctl s +10%")
+        , ((shiftMask, xF86XK_MonBrightnessDown), spawn "brightnessctl s 10%-")
+        , ((XMonad.modMask conf, xF86XK_Favorites), spawn "/home/apoelstra/bin/seizure.sh") -- "margot key"
+    -- misc
+        , ((XMonad.modMask conf, xK_BackSpace), spawn $ XMonad.terminal conf)
+        , ((XMonad.modMask conf, xK_equal), spawn $ XMonad.terminal conf ++ " -e bash -c 'source ~/.bashrc && ssh camus'")
+        , ((XMonad.modMask conf, xK_minus), spawn $ "xmonad --recompile && xmonad --restart")
+        , ((XMonad.modMask conf, xK_minus), sendMessage ToggleStruts)
+        -- shift+0 is code for ) ... unfortunately there is no shift+)
+        , ((shiftMask .|. XMonad.modMask conf, xK_0), spawn $ "xmonad --recompile && xmonad --restart")
+        , ((shiftMask .|. XMonad.modMask conf, xK_c), kill)
+    ] ++ [
+    -- workspace switching
+        ((smask .|. (XMonad.modMask conf), key), windows $ fn wkspace)
+            | (wkspace, key) <- zip workspaces' workspace_keys'
+            , (fn, smask) <- [(viewFixedScreen nScreens, 0), (W.shift, shiftMask)]
     ]
-
 
