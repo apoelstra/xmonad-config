@@ -12,8 +12,10 @@ import XMonad.Util.Run(spawnPipe, runProcessWithInput)
 import XMonad.Util.EZConfig
 
 -- Layout
-import XMonad.Layout.Groups.Wmii
 import XMonad.Layout.SimpleDecoration
+import XMonad.Layout.Groups.Wmii
+import XMonad.Layout.NoBorders
+import XMonad.Layout.Tabbed
 
 -- Actions
 import XMonad.Actions.CycleWS
@@ -24,6 +26,7 @@ import XMonad.Actions.UpdatePointer
 import XMonad.Hooks.DebugStack
 import XMonad.Hooks.DynamicLog
 import XMonad.Hooks.ManageDocks
+import XMonad.Hooks.ManageHelpers
 
 -- Main --
 main = do
@@ -33,7 +36,7 @@ main = do
     xmproc1 <- spawnPipe "xmobar -x 0"
     xmproc2 <- spawnPipe "xmobar -x 1"
     xmproc3 <- spawnPipe "xmobar -x 2"
-    xmonad $ defaultConfig
+    xmonad $ def
         { manageHook = manageHook'
         , layoutHook = layoutHook'
         , terminal = terminal_cmd
@@ -51,39 +54,78 @@ main = do
         -- workspace setup
         , workspaces = workspaces'
         , focusFollowsMouse = False -- interacts poorly with wmii
+        , handleEventHook = docksEventHook
         -- extra
-        , borderWidth = 3
+        , borderWidth = 5
         } `additionalKeysP` keys'
 
 -- Hooks --
 manageHook' :: ManageHook
 manageHook' = manageDocks
-                  <+> manageHook defaultConfig
+                  <+> (isFullscreen --> doFullFloat)
+                  <+> manageHook def
 
 layoutHook' = avoidStruts $ wmii shrinkText sdTheme
 
 -- Setup --
 terminal_cmd :: String
-terminal_cmd = "urxvt"
+terminal_cmd = "urxvt -pe selection-to-clipboard"
 
 secondDisplay :: X ScreenId
-secondDisplay = io $ do
+secondDisplay_ :: X ScreenId
+secondDisplay_ = io $ do
     s <- runProcessWithInput "/home/apoelstra/.xmonad/monitor-count.sh" [] ""
-    return (((S. read) s) - 1)
+    let n = read s
+    let n_adjust = n - 1
+    return (S n_adjust)
 
--- TODO copy XMonad.Util.Paste to get mouse click synthesization
+thirdDisplay :: X ScreenId
+thirdDisplay_ :: X ScreenId
+thirdDisplay_ = io $ do
+    s <- runProcessWithInput "/home/apoelstra/.xmonad/monitor-count.sh" [] ""
+    let n = read s
+    let n_adjust = if n == 1 then 0
+                   else 1
+    return (S n_adjust)
+
+-- overrides for Portland
+secondDisplay = io $ return 1
+thirdDisplay = io $ return 0
 
 -- Looks --
 -- workspaces
 workspaces' :: [WorkspaceId]
-workspaces' = ["1", "2", "3", "4", "5", "6-irc",
-               "7-writing", "8-music", "9-keys", "root",
-               "1'", "2'", "3'", "4'", "5'", "6'",
-               "7'", "8'", "9'" ]
+workspaces' = ["1", "2", "3", "4", "5",
+               "Q", "W", "E", "R", "T",
+               "6", "7", "8", "9", "0",
+               "Y", "U", "I", "O", "P",
+               "-1", "-2", "-3", "-4" ]
 
 chooseScreen :: WorkspaceId -> X ScreenId
-chooseScreen id = if id !! 0 > '6' then do return 0
-                   else secondDisplay
+chooseScreen id | id == "1" = secondDisplay
+                | id == "2" = secondDisplay
+                | id == "3" = secondDisplay
+                | id == "4" = secondDisplay
+                | id == "5" = secondDisplay
+                | id == "Q" = secondDisplay
+                | id == "W" = secondDisplay
+                | id == "E" = secondDisplay
+                | id == "R" = secondDisplay
+                | id == "T" = secondDisplay
+                | id == "6" = thirdDisplay
+                | id == "7" = thirdDisplay
+                | id == "8" = thirdDisplay
+                | id == "9" = thirdDisplay
+                | id == "0" = thirdDisplay
+                | id == "Y" = thirdDisplay
+                | id == "U" = thirdDisplay
+                | id == "I" = thirdDisplay
+                | id == "O" = thirdDisplay
+                | id == "P" = thirdDisplay
+                | id == "-1" = return 0
+                | id == "-2" = return 0
+                | id == "-3" = return 0
+                | id == "-4" = return 0
 
 viewOnSecond :: WorkspaceId -> X ()
 viewOnSecond = \tag -> (chooseScreen tag)
@@ -91,13 +133,14 @@ viewOnSecond = \tag -> (chooseScreen tag)
                    >>= (\fn -> windows (fn tag))
 
 -- decorations
-sdTheme = defaultTheme
+sdTheme = def
     { activeColor = "#284880"
     , activeTextColor = "#E0E0D0"
     , activeBorderColor = "#333344"
     , inactiveColor = "#222222"
     , inactiveTextColor = "#E0E0D0"
     , inactiveBorderColor = "#333300"
+    , fontName = "xft:xos4 Terminus:style=Regular:size=11"
     }
 
 -- Keybindings
@@ -113,28 +156,48 @@ keys' = [ -- wmii keybindings
         , ("M-]", zoomGroupIn)
           -- window movement
         , ("M-<Space>", toggleFocusFloat)
-        , ("M-j", focusDown)
-        , ("M-k", focusUp)
-        , ("S-M-j", swapDown)
-        , ("S-M-k", swapUp)
-        , ("M-h", focusGroupUp)
-        , ("M-l", focusGroupDown)
-        , ("S-M-h", moveToGroupUp False)
-        , ("S-M-l", moveToGroupDown False)
+        , ("M-<Down>", focusDown)
+        , ("M-<Up>", focusUp)
+        , ("S-M-<Down>", swapDown)
+        , ("S-M-<Up>", swapUp)
+        , ("M-<Left>", focusGroupUp)
+        , ("M-<Right>", focusGroupDown)
+        , ("S-M-<Left>", moveToGroupUp False)
+        , ("S-M-<Right>", moveToGroupDown False)
+        -- override numbers since default behaviour (switch to workspace on laptop screen) is surprising
+        , ("M-1", spawn $ "echo")
+        , ("M-2", spawn $ "echo")
+        , ("M-3", spawn $ "echo")
+        , ("M-4", spawn $ "echo")
+        , ("M-5", spawn $ "echo")
+        , ("M-6", spawn $ "echo")
+        , ("M-7", spawn $ "echo")
+        , ("M-8", spawn $ "echo")
+        , ("M-9", spawn $ "echo")
+        , ("M-0", spawn $ "echo")
+        -- fn keys
+        , ("<XF86MonBrightnessUp>", spawn "brightnessctl s +1%")
+        , ("<XF86MonBrightnessDown>", spawn "brightnessctl s 1%-")
+        , ("S-<XF86MonBrightnessUp>", spawn "brightnessctl s +10%")
+        , ("S-<XF86MonBrightnessDown>", spawn "brightnessctl s 10%-")
+        , ("<XF86Favorites>", spawn "/home/apoelstra/bin/seizure.sh")
         -- misc
-        , ("S-M-<Delete>", spawn "touch /tmp/.cancel-shutdown")
         , ("M-<Tab>", nextScreen)
+        , ("M-`", spawn "idevicediagnostics restart")
+        , ("S-M-<Delete>", spawn "touch /tmp/.cancel-shutdown")
         , ("S-M-<Return>", spawn $ terminal_cmd ++ " -fn " ++ "-*-terminus-medium-*-*-*-14-*-*-*-*-*-*-*")
         , ("M-<Return>", spawn $ terminal_cmd)
+        , ("M-<Backspace>", spawn $ terminal_cmd ++ " -e bash -c 'source ~/.bashrc && ssh camus'")
         , ("S-M-c", kill)
         , ("M-q", spawn $ "xmonad --recompile && xmonad --restart")
     -- add keybindings here
     ] ++
     [ (shiftKey ++ "M-" ++ key, action tag)
-        | (tag, key) <- zip workspaces' ["1", "2", "3", "4", "5",
-                                         "6", "7", "8", "9", "0",
-                                         "C-1", "C-2", "C-3", "C-4",
-                                         "C-5", "C-6", "C-7", "C-8", "C-9"
+        | (tag, key) <- zip workspaces' ["<F1>", "<F2>", "<F3>", "<F4>", "<F5>",
+                                         "<F11>", "<F12>", "<F13>", "<F14>", "<F15>",
+                                         "<F6>", "<F7>", "<F8>", "<F9>", "<F10>",
+                                         "<F16>", "<F17>", "<F18>", "<F19>", "<F20>",
+                                         "<F21>", "<F22>", "<F23>", "<F24>"
                                          ]
         , (shiftKey, action) <- [
             ("", viewOnSecond),
