@@ -30,6 +30,7 @@ import XMonad.Actions.UpdatePointer
 import XMonad.Hooks.DynamicLog
 import XMonad.Hooks.ManageDocks
 import XMonad.Hooks.ManageHelpers
+import XMonad.Hooks.UrgencyHook
 
 -- Main --
 main = do
@@ -37,49 +38,65 @@ main = do
     -- hack from geekosaur to get stderr to a readable place
     -- closeFd 2 >> openFd ".xsession-errors" WriteOnly (Just 0644) defaultFileFlags
     -- regular code
-    xmproc1 <- spawnPipe "xmobar -x 0"
-    xmproc2 <- spawnPipe "xmobar -x 1"
-    xmproc3 <- spawnPipe "xmobar -x 2"
-    xmonad $ defaultConfig
+    xmprocs <- xmobarPipes nScreens
+    xmonad $ withUrgencyHookC NoUrgencyHook urgencyConfig{ suppressWhen = Visible }
+      $ defaultConfig
         { manageHook = manageDocks
         , layoutHook = layoutHook'
         , terminal = "urxvt -pe selection-to-clipboard"
         , keys = keys' nScreens
         , modMask = mod4Mask
         -- xmobar
-        , logHook = multiXmobarPP [(xmproc1, 0), (xmproc2, 1), (xmproc3, 2)] xmobarPP
-                        { ppOutput = \s -> return () -- filled in by multiXmobarPP
-                        , ppLayout = \s -> ""
-                        , ppHidden = xmobarColor "#D0D0D0" ""
-                        , ppHiddenNoWindows = xmobarColor "#808080" ""
-                        , ppTitle = xmobarColor "green" "" . shorten 120
+        , logHook = multiXmobarPP xmprocs xmobarPP
+                        { ppLayout = \s -> ""
+                        , ppUrgent = xmobarColor xmobarWindows "#660000"
                         } >> (local (\c -> c { mouseFocused = False }) $ updatePointer (0.5, 0.5) (0, 0))
         -- workspace setup
         , workspaces = workspaces'
         , focusFollowsMouse = False -- interacts poorly with wmii
         , handleEventHook = docksEventHook
         -- extra
-        , borderWidth = 5
+        , borderWidth = 1
         }
 
 -- Hooks --
 layoutHook' = avoidStruts $
         wmii shrinkText sdTheme
+    ||| Tall 1 (5/100) (60/100)
     ||| noBorders Full
+
+-- xmobar colors --
+xmobarActive = "#FFFF00"
+xmobarWindows = "#D0D0D0"
+xmobarNoWindows = "#808080"
+
+-- Construct as many xmobars as we have screens, and label each with its ScreenId
+xmobarPipes :: Int -> IO [(Handle, ScreenId)]
+xmobarPipes nScreens = traverse
+    (\n -> fmap (\pipe -> (pipe, S n)) $ spawnPipe ("xmobar -x " ++ show n))
+    [0 .. nScreens - 1]
+
+padTitle :: String -> String
+padTitle = xmobarColor "black" "#D0C040" . shorten 240 . wrap "        " "        "
 
 -- Tell xmobar which screen is focused --
 multiXmobarPP :: [(Handle, ScreenId)] -> PP -> X ()
 multiXmobarPP handles pp =
     foldl1 (>>) pps
-    where pps = fmap (\xmproc -> do currentScreenID <- withWindowSet $ return . W.screen . W.current
-                                    dynamicLogWithPP pp {
-        ppOutput = \a -> do hPutStrLn (fst xmproc) (a ++ show (currentScreenID == snd xmproc))
-    }) handles
-
--- Get the name of the current layout.
-logScreenId :: Log.Logger
-logScreenId = withWindowSet $ return . Just . ld
-  where ld = show . W.screen . W.current
+    where pps = fmap (\xmproc -> do
+              currentScreenID <- withWindowSet $ return . W.screen . W.current
+              screenIsCurrent <- pure $ currentScreenID == snd xmproc
+              dynamicLogWithPP pp {
+                  ppOutput = \a -> do hPutStrLn (fst xmproc) a
+                , ppTitle = if screenIsCurrent then padTitle else \s -> ""
+                , ppCurrent = if screenIsCurrent
+                      then xmobarColor xmobarActive "" . wrap "[" "]"
+                      else xmobarColor xmobarWindows "" . wrap "<" ">"
+                , ppVisibleNoWindows = Just $ xmobarColor xmobarNoWindows "" . wrap "<" ">"
+                , ppVisible = xmobarColor xmobarWindows "" . wrap "<" ">"
+                , ppHiddenNoWindows = xmobarColor xmobarNoWindows ""
+                , ppHidden = xmobarColor xmobarWindows ""
+              }) handles
 
 -- Workspaces (attached to screens, tries to be smart about how many screens there actually are)
 workspaces' :: [WorkspaceId]
@@ -105,7 +122,6 @@ viewFixedScreen nScreens wid s = viewOnScreen currentScreenId wid s
 --    where currentScreenId = (W.screen . W.current) s
     where currentScreenId = chooseScreen nScreens wid
 
-
 -- decorations
 sdTheme = def
     { activeColor = "#284880"
@@ -130,8 +146,8 @@ keys' nScreens conf = M.fromList $ [
         , ((XMonad.modMask conf, xK_Right), focusGroupDown)
         , ((shiftMask .|. XMonad.modMask conf, xK_Left), moveToGroupUp False)
         , ((shiftMask .|. XMonad.modMask conf, xK_Right), moveToGroupDown False)
-        , ((XMonad.modMask conf, xK_bracketleft), zoomGroupOut)
-        , ((XMonad.modMask conf, xK_bracketright), zoomGroupIn)
+        , ((XMonad.modMask conf, xK_bracketleft), zoomGroupOut <> sendMessage Shrink)
+        , ((XMonad.modMask conf, xK_bracketright), zoomGroupIn <> sendMessage Expand)
         , ((XMonad.modMask conf, xK_space), toggleFocusFloat)
         , ((shiftMask .|. XMonad.modMask conf, xK_space), withFocused $ windows . W.sink)
     -- screen switching
@@ -150,7 +166,6 @@ keys' nScreens conf = M.fromList $ [
     -- misc
         , ((XMonad.modMask conf, xK_BackSpace), spawn $ XMonad.terminal conf)
         , ((XMonad.modMask conf, xK_equal), spawn $ XMonad.terminal conf ++ " -e bash -c 'source ~/.bashrc && ssh camus'")
-        , ((XMonad.modMask conf, xK_minus), spawn $ "xmonad --recompile && xmonad --restart")
         , ((XMonad.modMask conf, xK_minus), sendMessage ToggleStruts)
         -- shift+0 is code for ) ... unfortunately there is no shift+)
         , ((shiftMask .|. XMonad.modMask conf, xK_0), spawn $ "xmonad --recompile && xmonad --restart")
