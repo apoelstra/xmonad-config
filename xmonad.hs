@@ -12,6 +12,7 @@ import XMonad.Core
 import qualified XMonad.StackSet as W
 import XMonad.Util.Run(spawnPipe, runProcessWithInput)
 import XMonad.Util.EZConfig(additionalKeys)
+import qualified XMonad.Util.Loggers as Log
 
 -- Layout
 import XMonad.Layout.Grid
@@ -46,10 +47,8 @@ main = do
         , keys = keys' nScreens
         , modMask = mod4Mask
         -- xmobar
-        , logHook = dynamicLogWithPP xmobarPP
-                        { ppOutput = \a -> do hPutStrLn xmproc1 a
-                                              hPutStrLn xmproc2 a
-                                              hPutStrLn xmproc3 a
+        , logHook = multiXmobarPP [(xmproc1, 0), (xmproc2, 1), (xmproc3, 2)] xmobarPP
+                        { ppOutput = \s -> return () -- filled in by multiXmobarPP
                         , ppLayout = \s -> ""
                         , ppHidden = xmobarColor "#D0D0D0" ""
                         , ppHiddenNoWindows = xmobarColor "#808080" ""
@@ -67,6 +66,20 @@ main = do
 layoutHook' = avoidStruts $
         wmii shrinkText sdTheme
     ||| noBorders Full
+
+-- Tell xmobar which screen is focused --
+multiXmobarPP :: [(Handle, ScreenId)] -> PP -> X ()
+multiXmobarPP handles pp =
+    foldl1 (>>) pps
+    where pps = fmap (\xmproc -> do currentScreenID <- withWindowSet $ return . W.screen . W.current
+                                    dynamicLogWithPP pp {
+        ppOutput = \a -> do hPutStrLn (fst xmproc) (a ++ show (currentScreenID == snd xmproc))
+    }) handles
+
+-- Get the name of the current layout.
+logScreenId :: Log.Logger
+logScreenId = withWindowSet $ return . Just . ld
+  where ld = show . W.screen . W.current
 
 -- Workspaces (attached to screens, tries to be smart about how many screens there actually are)
 workspaces' :: [WorkspaceId]
