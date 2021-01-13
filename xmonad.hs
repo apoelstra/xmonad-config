@@ -28,6 +28,7 @@ import XMonad.Actions.UpdatePointer
 
 -- Hooks
 import XMonad.Hooks.DynamicLog
+import XMonad.Hooks.EwmhDesktops
 import XMonad.Hooks.ManageDocks
 import XMonad.Hooks.ManageHelpers
 import XMonad.Hooks.UrgencyHook
@@ -39,7 +40,8 @@ main = do
     -- closeFd 2 >> openFd ".xsession-errors" WriteOnly (Just 0644) defaultFileFlags
     -- regular code
     xmprocs <- xmobarPipes nScreens
-    xmonad $ withUrgencyHookC NoUrgencyHook urgencyConfig{ suppressWhen = Visible }
+    xmonad $ ewmh
+      $ withUrgencyHookC NoUrgencyHook urgencyConfig{ suppressWhen = Visible }
       $ defaultConfig
         { manageHook = manageDocks
         , layoutHook = layoutHook'
@@ -164,6 +166,11 @@ keys' nScreens conf = M.fromList $ [
         , ((shiftMask, xF86XK_MonBrightnessDown), spawn "brightnessctl s 10%-")
         , ((XMonad.modMask conf, xF86XK_Favorites), spawn "/home/apoelstra/bin/seizure.sh") -- "margot key"
     -- misc
+        , ((XMonad.modMask conf, xK_p), spawn $ "rofi -show run")
+        , ((XMonad.modMask conf, xK_0), spawn $ "rofi-pass")
+        , ((XMonad.modMask conf, xK_9), spawn $ "rofi -show ssh")
+        , ((XMonad.modMask conf, xK_8), spawn $ "rofi -fullscreen -show window")
+        , ((XMonad.modMask conf, xK_7), spawn $ "rofi -show calc")
         , ((XMonad.modMask conf, xK_BackSpace), spawn $ XMonad.terminal conf)
         , ((XMonad.modMask conf, xK_equal), spawn $ XMonad.terminal conf ++ " -e bash -c 'source ~/.bashrc && ssh camus'")
         , ((XMonad.modMask conf, xK_minus), sendMessage ToggleStruts)
